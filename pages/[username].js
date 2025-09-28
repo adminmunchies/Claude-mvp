@@ -1,246 +1,501 @@
-import { useRouter } from 'next/router'
-import { useEffect, useState } from 'react'
-import SEOHead from '../components/SEOHead'
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 export default function ArtistProfile() {
-  const router = useRouter()
-  const { username } = router.query
-  const [artist, setArtist] = useState(null)
-  const [artworks, setArtworks] = useState([])
-  const [news, setNews] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
+  const router = useRouter();
+  const { username } = router.query;
+  const [artist, setArtist] = useState(null);
+  const [artworks, setArtworks] = useState([]);
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
-    if (!username) return
+    if (username && username !== '') {
+      loadArtistData();
+    }
+  }, [username]);
 
-    setTimeout(() => {
-      if (username === 'koslitsch' || username === 'dominique') {
-        setArtist({
-          name: 'Dominique Foertig',
-          username: username,
-          bio: 'Contemporary artist exploring digital and traditional mediums. Based in Vienna, Austria.',
-          website: 'https://example.com',
-          instagram: '@dominique_art',
-          avatar: 'https://picsum.photos/400/400?random=1'
-        })
-        
-        setArtworks([
-          {
-            id: 1,
-            title: 'Digital Dreams',
-            description: 'Mixed media exploration of digital consciousness',
-            image: 'https://picsum.photos/400/300?random=1'
-          },
-          {
-            id: 2,
-            title: 'Urban Landscapes', 
-            description: 'Street photography series from Vienna',
-            image: 'https://picsum.photos/400/300?random=2'
-          }
-        ])
-        
-        setNews([
-          {
-            id: 1,
-            title: 'New Exhibition Opening Soon',
-            content: 'Excited to announce my upcoming solo exhibition at Gallery Modern. Opening reception March 15th.',
-            image_url: 'https://picsum.photos/600/300?random=10',
-            link_url: 'https://gallery-modern.com/dominique-exhibition',
-            created_at: '2024-01-20'
-          }
-        ])
-      } else {
-        setNotFound(true)
+  async function loadArtistData() {
+    try {
+      const { data: artistData, error: artistError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('username', username)
+        .single();
+
+      if (artistError) {
+        setLoading(false);
+        return;
       }
-      setLoading(false)
-    }, 500)
-  }, [username])
+      
+      setArtist(artistData);
+
+      // Load artworks
+      const { data: artworksData } = await supabase
+        .from('artworks')
+        .select('*')
+        .eq('user_id', artistData.id)
+        .order('sort_order', { ascending: true });
+
+      setArtworks(artworksData || []);
+
+      // Load news posts
+      const { data: newsData } = await supabase
+        .from('news_posts')
+        .select('*')
+        .eq('user_id', artistData.id)
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(6);
+
+      setNews(newsData || []);
+
+    } catch (error) {
+      console.error('Error loading artist:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openLightbox(index) {
+    setCurrentImageIndex(index);
+    setLightboxOpen(true);
+  }
+
+  function closeLightbox() {
+    setLightboxOpen(false);
+  }
+
+  function nextImage() {
+    setCurrentImageIndex((prev) => 
+      prev === artworks.length - 1 ? 0 : prev + 1
+    );
+  }
+
+  function prevImage() {
+    setCurrentImageIndex((prev) => 
+      prev === 0 ? artworks.length - 1 : prev - 1
+    );
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowRight') nextImage();
+    if (e.key === 'ArrowLeft') prevImage();
+  }
+
+  useEffect(() => {
+    if (lightboxOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [lightboxOpen]);
+
+  if (!router.isReady) {
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading router...</div>;
+  }
 
   if (loading) {
-    return (
-      <>
-        <SEOHead 
-          title="Loading Artist Profile..."
-          noIndex={true}
-        />
-        <div style={{ padding: '50px', textAlign: 'center' }}>
-          <h1>Loading...</h1>
-        </div>
-      </>
-    )
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading artist...</div>;
   }
-
-  if (notFound) {
+  
+  if (!artist) {
     return (
-      <>
-        <SEOHead 
-          title="Artist Not Found | Munchies Art Club"
-          description="This artist profile could not be found."
-          noIndex={true}
-        />
-        <div style={{ padding: '50px', textAlign: 'center' }}>
-          <h1>Artist not found</h1>
-          <p>The artist @{username} doesn't exist.</p>
-        </div>
-      </>
-    )
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <h1>Artist not found</h1>
+        <p>The artist @{username} doesn't exist.</p>
+        <Link href="/artists">← Back to Artists</Link>
+      </div>
+    );
   }
-
-  const seoTitle = `${artist.name} - Contemporary Artist ${artist.bio.includes('Vienna') ? 'Vienna' : ''} | Munchies Art Club`
-  const seoDescription = `${artist.bio} View ${artworks.length} artworks and latest news from ${artist.name}.`
-  const keywords = `${artist.name}, contemporary art, Vienna artist, digital art, ${artworks.map(a => a.title).join(', ')}`
 
   return (
-    <>
-      <SEOHead 
-        title={seoTitle}
-        description={seoDescription}
-        keywords={keywords}
-        author={artist.name}
-        url={`/${artist.username}`}
-        image={artist.avatar}
-        type="profile"
-      />
-      
-      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+    <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
+      {/* Header Banner */}
+      {artist.header_banner_url && (
         <div style={{ 
-          backgroundColor: 'white', 
-          padding: '60px 40px', 
-          borderBottom: '1px solid #e5e7eb',
-          textAlign: 'center'
+          height: '300px', 
+          backgroundImage: `url(${artist.header_banner_url})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          position: 'relative'
         }}>
-          <h1 style={{ fontSize: '3rem', margin: '0 0 10px 0' }}>
-            {artist.name}
-          </h1>
-          <p style={{ fontSize: '1.2rem', color: '#9333ea', margin: '0 0 20px 0' }}>
-            @{artist.username}
-          </p>
-          <p style={{ fontSize: '1.1rem', color: '#374151', maxWidth: '600px', margin: '0 auto 30px auto' }}>
-            {artist.bio}
-          </p>
-          
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
-            <a href={artist.website} target="_blank" style={{
-              padding: '12px 24px',
-              backgroundColor: '#9333ea',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '8px'
-            }}>
-              Website
-            </a>
-            <a href="https://instagram.com/dominique_art" target="_blank" style={{
-              padding: '12px 24px',
-              backgroundColor: '#e4405f',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '8px'
-            }}>
-              Instagram
-            </a>
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '20px',
+            background: 'rgba(0,0,0,0.7)',
+            color: 'white',
+            padding: '15px',
+            borderRadius: '10px'
+          }}>
+            <h1 style={{ margin: '0', fontSize: '28px' }}>{artist.name}</h1>
+            <p style={{ margin: '5px 0 0 0', opacity: '0.9' }}>@{artist.username}</p>
+          </div>
+        </div>
+      )}
+
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 20px' }}>
+        
+        {/* Profile Section */}
+        <div style={{ 
+          background: 'white', 
+          borderRadius: '15px', 
+          padding: '30px',
+          marginBottom: '40px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+            {artist.profile_image_url && (
+              <img 
+                src={artist.profile_image_url} 
+                alt={artist.name}
+                style={{ 
+                  width: '80px', 
+                  height: '80px', 
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  marginRight: '20px'
+                }}
+              />
+            )}
+            <div>
+              <h2 style={{ margin: '0', fontSize: '24px' }}>{artist.name}</h2>
+              {artist.location && (
+                <p style={{ margin: '5px 0', color: '#666' }}>📍 {artist.location}</p>
+              )}
+            </div>
+          </div>
+
+          {artist.bio_long && (
+            <div style={{ marginBottom: '20px' }}>
+              <h3>About</h3>
+              <p style={{ lineHeight: '1.6', color: '#555' }}>{artist.bio_long}</p>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '15px' }}>
+            {artist.website_url && (
+              <a href={artist.website_url} target="_blank" rel="noopener noreferrer"
+                style={{ 
+                  background: '#8a2be2', 
+                  color: 'white', 
+                  padding: '10px 20px', 
+                  borderRadius: '25px',
+                  textDecoration: 'none',
+                  fontSize: '14px'
+                }}>
+                🌐 Website
+              </a>
+            )}
+            {artist.instagram_handle && (
+              <a href={`https://instagram.com/${artist.instagram_handle}`} target="_blank" rel="noopener noreferrer"
+                style={{ 
+                  background: '#E4405F', 
+                  color: 'white', 
+                  padding: '10px 20px', 
+                  borderRadius: '25px',
+                  textDecoration: 'none',
+                  fontSize: '14px'
+                }}>
+                📸 Instagram
+              </a>
+            )}
+            {artist.contact_email && (
+              <a href={`mailto:${artist.contact_email}`}
+                style={{ 
+                  background: '#333', 
+                  color: 'white', 
+                  padding: '10px 20px', 
+                  borderRadius: '25px',
+                  textDecoration: 'none',
+                  fontSize: '14px'
+                }}>
+                ✉️ Contact
+              </a>
+            )}
           </div>
         </div>
 
-        <div style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto' }}>
-          <section style={{ marginBottom: '60px' }}>
-            <h2 style={{ fontSize: '2rem', marginBottom: '30px', textAlign: 'center' }}>
-              Artworks
-            </h2>
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '30px'
+        {/* Artworks Section */}
+        <div style={{ 
+          background: 'white', 
+          borderRadius: '15px', 
+          padding: '30px',
+          marginBottom: '40px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+        }}>
+          <h3 style={{ marginBottom: '20px' }}>Artworks ({artworks.length})</h3>
+          {artworks.length > 0 ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: '20px'
             }}>
-              {artworks.map(artwork => (
-                <div key={artwork.id} style={{
-                  backgroundColor: 'white',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    height: '250px',
-                    backgroundImage: `url(${artwork.image})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}></div>
-                  <div style={{ padding: '25px' }}>
-                    <h3 style={{ margin: '0 0 10px 0' }}>{artwork.title}</h3>
-                    <p style={{ color: '#6b7280', margin: 0 }}>{artwork.description}</p>
+              {artworks.map((artwork, index) => (
+                <div 
+                  key={artwork.id} 
+                  onClick={() => openLightbox(index)}
+                  style={{
+                    border: '1px solid #eee',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s ease',
+                  }}
+                  onMouseOver={(e) => e.target.closest('div').style.transform = 'scale(1.02)'}
+                  onMouseOut={(e) => e.target.closest('div').style.transform = 'scale(1)'}
+                >
+                  {artwork.image_url && (
+                    <img 
+                      src={artwork.image_url} 
+                      alt={artwork.title}
+                      style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+                    />
+                  )}
+                  <div style={{ padding: '15px' }}>
+                    <h4 style={{ margin: '0 0 5px 0' }}>{artwork.title}</h4>
+                    {artwork.year_created && (
+                      <p style={{ margin: '0', color: '#666', fontSize: '14px' }}>
+                        {artwork.year_created}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
-          </section>
+          ) : (
+            <p style={{ color: '#666', fontStyle: 'italic' }}>No artworks uploaded yet.</p>
+          )}
+        </div>
 
-          <section>
-            <h2 style={{ fontSize: '2rem', marginBottom: '30px', textAlign: 'center' }}>
-              Latest News
-            </h2>
-            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-              {news.map(article => (
-                <article key={article.id} style={{
-                  backgroundColor: 'white',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                  marginBottom: '30px',
-                  overflow: 'hidden'
-                }}>
-                  {article.image_url && (
-                    <div style={{
-                      height: '200px',
-                      backgroundImage: `url(${article.image_url})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center'
-                    }}></div>
-                  )}
-                  
-                  <div style={{ padding: '30px' }}>
-                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.4rem' }}>
-                      {article.title}
-                    </h3>
-                    <p style={{ margin: '0 0 15px 0', color: '#9ca3af', fontSize: '0.9rem' }}>
-                      {new Date(article.created_at).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </p>
-                    <p style={{ 
-                      color: '#374151', 
-                      lineHeight: '1.6', 
-                      margin: '0 0 20px 0',
-                      fontSize: '1rem'
-                    }}>
-                      {article.content}
-                    </p>
-                    
-                    {article.link_url && (
-                      <a 
-                        href={article.link_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-block',
-                          padding: '12px 24px',
-                          backgroundColor: '#9333ea',
-                          color: 'white',
-                          textDecoration: 'none',
-                          borderRadius: '8px',
-                          fontWeight: '500'
-                        }}
-                      >
-                        Read More
-                      </a>
+        {/* News Section */}
+        <div style={{ 
+          background: 'white', 
+          borderRadius: '15px', 
+          padding: '30px',
+          marginBottom: '40px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+        }}>
+          <h3 style={{ marginBottom: '20px' }}>Latest News ({news.length})</h3>
+          {news.length > 0 ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '20px'
+            }}>
+              {news.map(post => (
+                <Link 
+                  key={post.id} 
+                  href={`/news/${post.id}`}
+                  style={{ textDecoration: 'none' }}
+                >
+                  <div style={{
+                    border: '1px solid #eee',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s ease',
+                    height: '100%'
+                  }}>
+                    {post.featured_image_url && (
+                      <img 
+                        src={post.featured_image_url} 
+                        alt={post.title}
+                        style={{ width: '100%', height: '180px', objectFit: 'cover' }}
+                      />
                     )}
+                    <div style={{ padding: '20px' }}>
+                      <h4 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>
+                        {post.title}
+                      </h4>
+                      <p style={{ 
+                        margin: '0 0 10px 0', 
+                        color: '#555', 
+                        fontSize: '14px',
+                        lineHeight: '1.4'
+                      }}>
+                        {post.content.substring(0, 100)}...
+                      </p>
+                      <p style={{ margin: '0', color: '#999', fontSize: '12px' }}>
+                        {new Date(post.published_at).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
-                </article>
+                </Link>
               ))}
             </div>
-          </section>
+          ) : (
+            <p style={{ color: '#666', fontStyle: 'italic' }}>No news posted yet.</p>
+          )}
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '40px' }}>
+          <Link href="/artists" style={{
+            background: '#8a2be2',
+            color: 'white',
+            padding: '15px 30px',
+            borderRadius: '25px',
+            textDecoration: 'none',
+            fontSize: '16px'
+          }}>
+            ← Back to All Artists
+          </Link>
         </div>
       </div>
-    </>
-  )
+
+      {/* Lightbox Modal für Artworks */}
+      {lightboxOpen && artworks.length > 0 && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={closeLightbox}
+        >
+          <button
+            onClick={closeLightbox}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              color: 'white',
+              fontSize: '24px',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              zIndex: 1001
+            }}
+          >
+            ×
+          </button>
+
+          {artworks.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); prevImage(); }}
+                style={{
+                  position: 'absolute',
+                  left: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: '24px',
+                  width: '50px',
+                  height: '50px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  zIndex: 1001
+                }}
+              >
+                ‹
+              </button>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); nextImage(); }}
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: '24px',
+                  width: '50px',
+                  height: '50px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  zIndex: 1001
+                }}
+              >
+                ›
+              </button>
+            </>
+          )}
+
+          <div 
+            style={{ 
+              maxWidth: '90vw', 
+              maxHeight: '90vh', 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={artworks[currentImageIndex]?.image_url}
+              alt={artworks[currentImageIndex]?.title}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '80vh',
+                objectFit: 'contain',
+                borderRadius: '10px'
+              }}
+            />
+            
+            <div style={{
+              marginTop: '20px',
+              textAlign: 'center',
+              color: 'white',
+              background: 'rgba(0, 0, 0, 0.7)',
+              padding: '15px',
+              borderRadius: '10px',
+              maxWidth: '500px'
+            }}>
+              <h3 style={{ margin: '0 0 5px 0' }}>
+                {artworks[currentImageIndex]?.title}
+              </h3>
+              {artworks[currentImageIndex]?.year_created && (
+                <p style={{ margin: '0 0 5px 0', color: '#ccc' }}>
+                  {artworks[currentImageIndex].year_created}
+                </p>
+              )}
+              {artworks[currentImageIndex]?.medium && (
+                <p style={{ margin: '0 0 5px 0', color: '#ccc' }}>
+                  {artworks[currentImageIndex].medium}
+                </p>
+              )}
+              {artworks[currentImageIndex]?.description && (
+                <p style={{ margin: '10px 0 0 0', color: '#eee', fontSize: '14px' }}>
+                  {artworks[currentImageIndex].description}
+                </p>
+              )}
+              {artworks.length > 1 && (
+                <p style={{ margin: '10px 0 0 0', color: '#999', fontSize: '12px' }}>
+                  {currentImageIndex + 1} of {artworks.length} • Use arrow keys or buttons to navigate
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

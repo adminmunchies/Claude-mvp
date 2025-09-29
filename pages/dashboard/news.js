@@ -1,491 +1,501 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
+import { supabase } from '../../lib/supabase';
 
 export default function NewsManagement() {
   const router = useRouter();
   const [user, setUser] = useState(null);
-  const [newsPosts, setNewsPosts] = useState([]);
+  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  
+  const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
-    featured_image_url: '',
+    external_link: '',
+    link_button_text: 'Visit Link',
+    featured_image: null,
+    image_alt: '',
     status: 'draft',
     is_featured_on_homepage: false
   });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    getCurrentUser();
+    checkUser();
+    fetchPosts();
   }, []);
 
-  async function getCurrentUser() {
+  async function checkUser() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       router.push('/login');
       return;
     }
     setUser(user);
-    await loadNews(user.id);
   }
 
-  async function loadNews(userId) {
+  async function fetchPosts() {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('news_posts')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      setNewsPosts(data || []);
+      setPosts(data || []);
     } catch (error) {
-      console.error('Error loading news:', error);
-      alert('Error loading news: ' + error.message);
+      console.error('Error fetching posts:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  async function uploadImage(event) {
+  async function handleImageUpload(e) {
     try {
-      setUploading(true);
-      
-      if (!event.target.files || event.target.files.length === 0) {
-        throw new Error('You must select an image to upload.');
-      }
+      const file = e.target.files[0];
+      if (!file) return;
 
-      const file = event.target.files[0];
+      setUploading(true);
+
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-news-${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('news-images')
         .upload(filePath, file);
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage
+      const { data: { publicUrl } } = supabase.storage
         .from('news-images')
         .getPublicUrl(filePath);
 
-      setFormData(prev => ({
-        ...prev,
-        featured_image_url: data.publicUrl
-      }));
-
-      alert('Image uploaded successfully!');
+      setFormData({ ...formData, featured_image: publicUrl });
     } catch (error) {
-      alert('Error uploading image: ' + error.message);
+      console.error('Error uploading image:', error);
+      alert('Failed to upload image');
     } finally {
       setUploading(false);
     }
   }
 
-  function handleInputChange(e) {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  }
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
 
-  async function saveNews() {
     try {
-      if (!formData.title || !formData.content) {
-        alert('Please provide at least a title and content.');
-        return;
-      }
-
-      const newsData = {
+      const postData = {
         user_id: user.id,
-        ...formData,
+        title: formData.title,
+        content: formData.content,
+        external_link: formData.external_link || null,
+        link_button_text: formData.link_button_text || 'Visit Link',
+        featured_image_url: formData.featured_image,
+        image_alt: formData.image_alt || formData.title,
+        status: formData.status,
+        is_featured_on_homepage: formData.is_featured_on_homepage,
         published_at: formData.status === 'published' ? new Date().toISOString() : null
       };
 
       const { error } = await supabase
         .from('news_posts')
-        .insert(newsData);
+        .insert([postData]);
 
       if (error) throw error;
 
-      alert('News post saved successfully!');
-      setShowAddForm(false);
+      alert('Post created successfully!');
+      setShowForm(false);
       setFormData({
         title: '',
         content: '',
-        featured_image_url: '',
+        external_link: '',
+        link_button_text: 'Visit Link',
+        featured_image: null,
+        image_alt: '',
         status: 'draft',
         is_featured_on_homepage: false
       });
-      
-      await loadNews(user.id);
+      fetchPosts();
     } catch (error) {
-      alert('Error saving news: ' + error.message);
+      console.error('Error creating post:', error);
+      alert('Failed to create post: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function updateNewsStatus(newsId, newStatus) {
+  async function togglePublish(postId, currentStatus) {
     try {
+      const newStatus = currentStatus === 'published' ? 'draft' : 'published';
       const { error } = await supabase
         .from('news_posts')
         .update({ 
           status: newStatus,
           published_at: newStatus === 'published' ? new Date().toISOString() : null
         })
-        .eq('id', newsId);
+        .eq('id', postId);
 
       if (error) throw error;
-      await loadNews(user.id);
+      fetchPosts();
     } catch (error) {
-      alert('Error updating news status: ' + error.message);
+      console.error('Error updating post:', error);
+      alert('Failed to update post');
     }
   }
 
-  async function deleteNews(newsId) {
-    if (!confirm('Are you sure you want to delete this news post?')) return;
+  async function deletePost(postId) {
+    if (!confirm('Are you sure you want to delete this post?')) return;
 
     try {
       const { error } = await supabase
         .from('news_posts')
         .delete()
-        .eq('id', newsId);
+        .eq('id', postId);
 
       if (error) throw error;
-
-      alert('News post deleted successfully!');
-      await loadNews(user.id);
+      fetchPosts();
     } catch (error) {
-      alert('Error deleting news: ' + error.message);
+      console.error('Error deleting post:', error);
+      alert('Failed to delete post');
     }
   }
 
-  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>;
+  if (loading && !user) return <div>Loading...</div>;
 
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px'
-    }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        <div style={{ marginBottom: '30px' }}>
-          <button 
-            onClick={() => router.push('/dashboard')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#8a2be2',
-              fontSize: '16px',
-              cursor: 'pointer',
-              marginBottom: '10px'
-            }}
-          >
-            ← Back to Dashboard
-          </button>
-          <h1 style={{
-            color: '#8a2be2',
-            fontSize: '48px',
-            fontWeight: 'bold',
-            textAlign: 'center',
-            margin: '0'
-          }}>
-            News & Updates
-          </h1>
-        </div>
-
-        <div style={{
-          background: 'white',
-          borderRadius: '10px',
-          padding: '30px',
+    <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <Link href="/dashboard" style={{
+          color: '#667eea',
+          textDecoration: 'none',
+          fontSize: '16px',
           marginBottom: '30px',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
+          display: 'inline-block'
         }}>
-          
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: '30px'
-          }}>
-            <h2>Your News Posts ({newsPosts.length})</h2>
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              style={{
-                background: '#8a2be2',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '25px',
-                cursor: 'pointer',
-                fontSize: '16px'
-              }}
-            >
-              {showAddForm ? 'Cancel' : '+ Create News Post'}
-            </button>
+          ← Back to Dashboard
+        </Link>
+
+        <h1 style={{ fontSize: '48px', fontWeight: 'bold', marginBottom: '40px', textAlign: 'center' }}>
+          News & Updates
+        </h1>
+
+        <div style={{ background: 'white', borderRadius: '15px', padding: '40px', marginBottom: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 'bold' }}>
+              Your Posts ({posts.length})
+            </h2>
+            {!showForm && (
+              <button
+                onClick={() => setShowForm(true)}
+                style={{
+                  padding: '12px 24px',
+                  background: '#2c3e50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                + Create Post
+              </button>
+            )}
           </div>
 
-          {showAddForm && (
-            <div style={{
-              background: '#f9f9f9',
-              padding: '30px',
-              borderRadius: '10px',
-              marginBottom: '30px'
-            }}>
-              <h3>Create New News Post</h3>
-              
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleInputChange}
+          {showForm && (
+            <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '10px', marginBottom: '40px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '20px', fontWeight: 'bold' }}>Create New Post</h3>
+                <button
+                  onClick={() => setShowForm(false)}
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                    fontSize: '16px'
+                    padding: '8px 16px',
+                    background: '#2c3e50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
                   }}
-                  placeholder="News post title"
-                />
+                >
+                  Cancel
+                </button>
               </div>
 
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                  Content *
-                </label>
-                <textarea
-                  name="content"
-                  value={formData.content}
-                  onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                    height: '200px',
-                    resize: 'vertical',
-                    fontSize: '16px'
-                  }}
-                  placeholder="Write your news content here..."
-                />
-              </div>
-
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                  Featured Image
-                </label>
-                {formData.featured_image_url && (
-                  <img 
-                    src={formData.featured_image_url} 
-                    alt="Preview" 
-                    style={{ 
-                      width: '200px', 
-                      height: '120px', 
-                      objectFit: 'cover', 
-                      borderRadius: '10px',
-                      marginBottom: '10px',
-                      display: 'block'
-                    }} 
+              <form onSubmit={handleSubmit}>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Post title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '16px'
+                    }}
                   />
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={uploadImage}
-                  disabled={uploading}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px'
-                  }}
-                />
-              </div>
+                </div>
 
-              <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', alignItems: 'center' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Content *
+                  </label>
+                  <textarea
+                    placeholder="Share your thoughts, updates, or announcements..."
+                    value={formData.content}
+                    onChange={(e) => setFormData({...formData, content: e.target.value})}
+                    required
+                    rows={6}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    External Link (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com"
+                    value={formData.external_link}
+                    onChange={(e) => setFormData({...formData, external_link: e.target.value})}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '16px'
+                    }}
+                  />
+                  <small style={{ color: '#666', fontSize: '14px' }}>
+                    Add an external link (e.g., exhibition website, article, gallery)
+                  </small>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Link Button Text
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Visit Exhibition"
+                    value={formData.link_button_text}
+                    onChange={(e) => setFormData({...formData, link_button_text: e.target.value})}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '16px'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Featured Image
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  {uploading && <p style={{ color: '#667eea', marginTop: '10px' }}>Uploading...</p>}
+                  {formData.featured_image && (
+                    <img
+                      src={formData.featured_image}
+                      alt="Preview"
+                      style={{ marginTop: '15px', maxWidth: '300px', borderRadius: '8px' }}
+                    />
+                  )}
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Image Alt Text (for accessibility)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Describe the image for screen readers"
+                    value={formData.image_alt}
+                    onChange={(e) => setFormData({...formData, image_alt: e.target.value})}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '16px'
+                    }}
+                  />
+                  <small style={{ color: '#666', fontSize: '14px' }}>
+                    e.g., "Colorful abstract painting with blue and red tones"
+                  </small>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>
                     Status
                   </label>
                   <select
-                    name="status"
                     value={formData.status}
-                    onChange={handleInputChange}
+                    onChange={(e) => setFormData({...formData, status: e.target.value})}
                     style={{
                       padding: '12px',
-                      border: '1px solid #ddd',
-                      borderRadius: '5px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
                       fontSize: '16px'
                     }}
                   >
                     <option value="draft">Draft</option>
                     <option value="published">Published</option>
                   </select>
+
+                  <label style={{ marginLeft: '20px', display: 'inline-flex', alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.is_featured_on_homepage}
+                      onChange={(e) => setFormData({...formData, is_featured_on_homepage: e.target.checked})}
+                      style={{ marginRight: '8px' }}
+                    />
+                    Feature on homepage
+                  </label>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '25px' }}>
-                  <input
-                    type="checkbox"
-                    name="is_featured_on_homepage"
-                    checked={formData.is_featured_on_homepage}
-                    onChange={handleInputChange}
-                  />
-                  <label>Feature on homepage</label>
-                </div>
-              </div>
-
-              <button
-                onClick={saveNews}
-                disabled={uploading || !formData.title || !formData.content}
-                style={{
-                  background: (!formData.title || !formData.content) ? '#ccc' : '#8a2be2',
-                  color: 'white',
-                  border: 'none',
-                  padding: '15px 30px',
-                  borderRadius: '25px',
-                  cursor: (!formData.title || !formData.content) ? 'not-allowed' : 'pointer',
-                  fontSize: '16px'
-                }}
-              >
-                {uploading ? 'Uploading...' : formData.status === 'published' ? 'Publish News' : 'Save as Draft'}
-              </button>
+                <button
+                  type="submit"
+                  disabled={loading || uploading}
+                  style={{
+                    padding: '14px 28px',
+                    background: loading ? '#999' : '#667eea',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: loading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {loading ? 'Saving...' : 'Save Post'}
+                </button>
+              </form>
             </div>
           )}
 
-          {newsPosts.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {newsPosts.map(post => (
-                <div key={post.id} style={{
-                  border: '1px solid #eee',
-                  borderRadius: '10px',
-                  padding: '20px',
-                  background: 'white'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                      <h3 style={{ margin: '0 0 10px 0', fontSize: '20px' }}>{post.title}</h3>
-                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                        <span style={{ 
-                          background: post.status === 'published' ? '#10b981' : '#f59e0b',
-                          color: 'white',
-                          padding: '4px 12px',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: 'bold'
-                        }}>
-                          {post.status}
-                        </span>
-                        {post.is_featured_on_homepage && (
-                          <span style={{ 
-                            background: '#8a2be2',
-                            color: 'white',
-                            padding: '4px 12px',
-                            borderRadius: '12px',
-                            fontSize: '12px'
-                          }}>
-                            Featured
-                          </span>
-                        )}
-                        <span style={{ color: '#666', fontSize: '14px' }}>
-                          {new Date(post.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    {post.featured_image_url && (
-                      <img 
-                        src={post.featured_image_url} 
-                        alt={post.title}
-                        style={{ 
-                          width: '80px', 
-                          height: '60px', 
-                          objectFit: 'cover', 
-                          borderRadius: '8px',
-                          marginLeft: '20px'
-                        }}
-                      />
+          {posts.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#666' }}>
+              <p style={{ fontSize: '18px', marginBottom: '10px' }}>No posts yet</p>
+              <p>Create your first post to share updates with your audience!</p>
+            </div>
+          ) : (
+            posts.map(post => (
+              <div key={post.id} style={{
+                border: '2px solid #eee',
+                borderRadius: '10px',
+                padding: '20px',
+                marginBottom: '20px',
+                display: 'flex',
+                gap: '20px'
+              }}>
+                {post.featured_image_url && (
+                  <img
+                    src={post.featured_image_url}
+                    alt={post.title}
+                    style={{ width: '150px', height: '100px', objectFit: 'cover', borderRadius: '8px' }}
+                  />
+                )}
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+                    {post.title}
+                  </h3>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    <span style={{
+                      padding: '4px 12px',
+                      background: post.status === 'published' ? '#28a745' : '#ffc107',
+                      color: 'white',
+                      borderRadius: '15px',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}>
+                      {post.status}
+                    </span>
+                    {post.is_featured_on_homepage && (
+                      <span style={{
+                        padding: '4px 12px',
+                        background: '#667eea',
+                        color: 'white',
+                        borderRadius: '15px',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                      }}>
+                        Featured
+                      </span>
                     )}
                   </div>
-                  
-                  <p style={{ 
-                    margin: '10px 0 20px 0', 
-                    color: '#555',
-                    lineHeight: '1.5'
-                  }}>
-                    {post.content.substring(0, 200)}...
+                  <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
+                    {new Date(post.published_at || post.created_at).toLocaleDateString()}
                   </p>
-                  
+                  <p style={{ color: '#666', marginBottom: '15px' }}>
+                    {post.content.substring(0, 150)}...
+                  </p>
                   <div style={{ display: 'flex', gap: '10px' }}>
-                    {post.status === 'draft' ? (
-                      <button
-                        onClick={() => updateNewsStatus(post.id, 'published')}
-                        style={{
-                          background: '#10b981',
-                          color: 'white',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '15px',
-                          cursor: 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        Publish
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => updateNewsStatus(post.id, 'draft')}
-                        style={{
-                          background: '#f59e0b',
-                          color: 'white',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '15px',
-                          cursor: 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        Unpublish
-                      </button>
-                    )}
-                    
                     <button
-                      onClick={() => deleteNews(post.id)}
+                      onClick={() => togglePublish(post.id, post.status)}
                       style={{
-                        background: '#ff4444',
+                        padding: '8px 16px',
+                        background: '#ff9800',
                         color: 'white',
                         border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {post.status === 'published' ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      onClick={() => deletePost(post.id)}
+                      style={{
                         padding: '8px 16px',
-                        borderRadius: '15px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
+                        background: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
                       }}
                     >
                       Delete
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '40px',
-              color: '#666'
-            }}>
-              <h3>No news posts yet</h3>
-              <p>Create your first news post to share updates with your audience!</p>
-            </div>
+              </div>
+            ))
           )}
         </div>
       </div>

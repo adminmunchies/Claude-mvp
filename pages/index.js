@@ -1,255 +1,198 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { supabase } from '../lib/supabase';
 
-export default function Homepage() {
-  const [featuredNews, setFeaturedNews] = useState([]);
+export default function Home() {
   const [featuredArtists, setFeaturedArtists] = useState([]);
+  const [latestNews, setLatestNews] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadHomepageData();
+    fetchData();
   }, []);
 
-  async function loadHomepageData() {
+  async function fetchData() {
     try {
-      // Load featured news
-      const { data: newsData } = await supabase
-        .from('news_posts')
-        .select(`
-          *,
-          users (name, username, profile_image_url)
-        `)
-        .eq('status', 'published')
-        .order('published_at', { ascending: false })
-        .limit(6);
-
-      setFeaturedNews(newsData || []);
-
-      // Load featured artists
-      const { data: artistsData } = await supabase
+      const { data: artists, error: artistsError } = await supabase
         .from('users')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(4);
+        .eq('account_status', 'active')
+        .limit(6);
 
-      setFeaturedArtists(artistsData || []);
+      if (artistsError) throw artistsError;
+      setFeaturedArtists(artists || []);
 
+      const { data: news, error: newsError } = await supabase
+        .from('news_posts')
+        .select('*, users (name, username, profile_image_url)')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(9);
+
+      if (newsError) throw newsError;
+      setLatestNews(news || []);
     } catch (error) {
-      console.error('Error loading homepage data:', error);
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>;
-
   return (
-    <div style={{ minHeight: '100vh' }}>
-      {/* Hero Section */}
-      <div style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: '100px 20px',
-        textAlign: 'center',
-        color: 'white'
-      }}>
-        <h1 style={{ fontSize: '48px', marginBottom: '20px', fontWeight: 'bold' }}>
+    <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: "'Montserrat', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet" />
+      
+      <style jsx>{`
+        .mc-card {
+          background: #fff;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+          transition: box-shadow 0.35s ease, transform 0.35s ease;
+          will-change: transform;
+        }
+        .mc-card:hover {
+          box-shadow: 0 12px 28px rgba(0,0,0,0.16);
+          transform: translateY(-2px);
+        }
+        .mc-card__media {
+          position: relative;
+          height: 260px;
+          overflow: hidden;
+          background: #f4f4f5;
+        }
+        @media (max-width: 1024px) {
+          .mc-card__media { height: 200px; }
+        }
+        @media (max-width: 640px) {
+          .mc-card__media { height: 160px; }
+        }
+        .mc-card__media img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          transform: scale(1);
+          transition: transform 0.6s ease;
+          will-change: transform;
+        }
+        .mc-card:hover .mc-card__media img {
+          transform: scale(1.06);
+        }
+        .mc-gradient {
+          position: absolute;
+          inset: auto 0 0 0;
+          height: 40%;
+          background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 100%);
+          pointer-events: none;
+        }
+        .mc-badge {
+          position: absolute;
+          top: 12px;
+          left: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          color: #fff;
+          background: #111;
+          padding: 6px 10px;
+          border-radius: 999px;
+        }
+        .mc-badge-news {
+          background: #0a66ff;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .mc-card, .mc-card__media img { transition: none; }
+          .mc-card:hover { transform: none; }
+        }
+      `}</style>
+
+      <section style={{ background: 'white', padding: '60px 20px', textAlign: 'center', borderBottom: '1px solid #e0e0e0' }}>
+        <h1 style={{ fontSize: '48px', fontWeight: '700', marginBottom: '15px', color: '#000', letterSpacing: '-1px' }}>
           Munchies Art Club
         </h1>
-        <p style={{ fontSize: '20px', marginBottom: '40px', opacity: '0.9' }}>
+        <p style={{ fontSize: '18px', color: '#666', marginBottom: '35px', fontWeight: '400' }}>
           Discover emerging artists and their latest works
         </p>
-        <div style={{ display: 'flex', gap: '20px', justifyContent: 'center' }}>
-          <Link href="/artists" style={{
-            background: 'white',
-            color: '#8a2be2',
-            padding: '15px 30px',
-            borderRadius: '25px',
-            textDecoration: 'none',
-            fontWeight: 'bold'
-          }}>
+        <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/artists" style={{ padding: '14px 32px', background: '#000', color: '#fff', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '15px' }}>
             Browse Artists
           </Link>
-          <Link href="/signup" style={{
-            background: 'rgba(255,255,255,0.2)',
-            color: 'white',
-            padding: '15px 30px',
-            borderRadius: '25px',
-            textDecoration: 'none',
-            border: '2px solid white'
-          }}>
+          <Link href="/signup" style={{ padding: '14px 32px', background: 'transparent', color: '#000', border: '2px solid #000', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '15px' }}>
             Join as Artist
           </Link>
         </div>
-      </div>
+      </section>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '60px 20px' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '60px 20px' }}>
         
-        {/* Featured Artists Section */}
         <section style={{ marginBottom: '80px' }}>
-          <h2 style={{ fontSize: '32px', textAlign: 'center', marginBottom: '40px' }}>
-            Featured Artists
+          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '40px', color: '#000' }}>
+            New Artists to Discover
           </h2>
-          
-          {featuredArtists.length > 0 ? (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-              gap: '30px'
-            }}>
-              {featuredArtists.map(artist => (
-                <Link key={artist.id} href={`/${artist.username}`} style={{ textDecoration: 'none' }}>
-                  <div style={{
-                    background: 'white',
-                    borderRadius: '15px',
-                    overflow: 'hidden',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                    transition: 'transform 0.3s ease',
-                    cursor: 'pointer'
-                  }}>
-                    {artist.profile_image_url && (
-                      <img 
-                        src={artist.profile_image_url} 
-                        alt={artist.name}
-                        style={{ 
-                          width: '100%', 
-                          height: '200px', 
-                          objectFit: 'cover' 
-                        }}
-                      />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px' }}>
+            {featuredArtists.map(artist => (
+              <article key={artist.id} className="mc-card" data-label="artist">
+                <Link href={'/' + artist.username} style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}>
+                  <div className="mc-card__media">
+                    {artist.header_banner_url && (
+                      <img src={artist.header_banner_url} alt={artist.name} loading="lazy" />
                     )}
-                    
-                    <div style={{ padding: '20px' }}>
-                      <h3 style={{ margin: '0 0 5px 0', fontSize: '18px' }}>
-                        {artist.name}
-                      </h3>
-                      <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '14px' }}>
-                        @{artist.username}
-                      </p>
-                      {artist.bio_short && (
-                        <p style={{ 
-                          margin: '0', 
-                          color: '#555', 
-                          fontSize: '14px',
-                          lineHeight: '1.4'
-                        }}>
-                          {artist.bio_short}
-                        </p>
+                    <span className="mc-badge">Artist</span>
+                    <span className="mc-gradient"></span>
+                  </div>
+                  <h3 style={{ fontSize: '1.125rem', lineHeight: '1.3', fontWeight: '700', margin: '12px 16px 4px', color: '#111', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {artist.name}
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      {artist.profile_image_url && (
+                        <img src={artist.profile_image_url} alt={artist.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
                       )}
+                      <span style={{ fontSize: '0.9rem', fontWeight: '500', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        @{artist.username}
+                      </span>
                     </div>
+                    <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: '500' }}>View</span>
                   </div>
                 </Link>
-              ))}
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', color: '#666' }}>
-              No featured artists yet. Be the first to join!
-            </div>
-          )}
+              </article>
+            ))}
+          </div>
         </section>
 
-        {/* Latest News Section */}
         <section>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: '40px'
-          }}>
-            <h2 style={{ fontSize: '32px', margin: '0' }}>
-              Latest News
-            </h2>
-            <Link href="/news" style={{
-              color: '#8a2be2',
-              textDecoration: 'none',
-              fontSize: '16px'
-            }}>
-              View All →
-            </Link>
-          </div>
-          
-          {featuredNews.length > 0 ? (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '30px'
-            }}>
-              {featuredNews.map(post => (
-                <div key={post.id} style={{
-                  background: 'white',
-                  borderRadius: '15px',
-                  overflow: 'hidden',
-                  boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
-                }}>
-                  {post.featured_image_url && (
-                    <img 
-                      src={post.featured_image_url} 
-                      alt={post.title}
-                      style={{ 
-                        width: '100%', 
-                        height: '180px', 
-                        objectFit: 'cover' 
-                      }}
-                    />
-                  )}
-                  
-                  <div style={{ padding: '20px' }}>
-                    <h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>
-                      {post.title}
-                    </h3>
-                    
-                    <div style={{ 
-                      display: 'flex', 
-                      alignItems: 'center',
-                      marginBottom: '15px'
-                    }}>
-                      {post.users?.profile_image_url && (
-                        <img 
-                          src={post.users.profile_image_url} 
-                          alt={post.users.name}
-                          style={{ 
-                            width: '30px', 
-                            height: '30px', 
-                            borderRadius: '50%',
-                            marginRight: '10px',
-                            objectFit: 'cover'
-                          }}
-                        />
-                      )}
-                      <div>
-                        <p style={{ margin: '0', fontSize: '14px', fontWeight: 'bold' }}>
-                          {post.users?.name}
-                        </p>
-                        <p style={{ margin: '0', fontSize: '12px', color: '#666' }}>
-                          {post.published_at ? new Date(post.published_at).toLocaleDateString() : 'Draft'}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <p style={{ 
-                      margin: '0', 
-                      color: '#555', 
-                      fontSize: '14px',
-                      lineHeight: '1.5'
-                    }}>
-                      {post.content.substring(0, 150)}...
-                    </p>
+          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '40px', color: '#000' }}>
+            Latest News
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
+            {latestNews.map(post => (
+              <article key={post.id} className="mc-card" data-label="news">
+                <Link href={'/news/' + post.id} style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}>
+                  <div className="mc-card__media">
+                    {post.featured_image_url && (
+                      <img src={post.featured_image_url} alt={post.title} loading="lazy" />
+                    )}
+                    <span className="mc-badge mc-badge-news">News</span>
+                    <span className="mc-gradient"></span>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ 
-              textAlign: 'center', 
-              color: '#666',
-              padding: '40px',
-              background: '#f9f9f9',
-              borderRadius: '15px'
-            }}>
-              <h3>No news yet!</h3>
-              <p>Artists will share their latest updates here.</p>
-            </div>
-          )}
+                  <h3 style={{ fontSize: '1.125rem', lineHeight: '1.3', fontWeight: '700', margin: '12px 16px 4px', color: '#111', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {post.title}
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      {post.users?.profile_image_url && (
+                        <img src={post.users.profile_image_url} alt={post.users.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                      )}
+                      <span style={{ fontSize: '0.9rem', fontWeight: '500', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {post.users?.name}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: '500' }}>Read more</span>
+                  </div>
+                </Link>
+              </article>
+            ))}
+          </div>
         </section>
       </div>
     </div>

@@ -1,200 +1,115 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
+import Footer from '../components/Footer';
 
 export default function Home() {
-  const [featuredArtists, setFeaturedArtists] = useState([]);
-  const [latestNews, setLatestNews] = useState([]);
+  const router = useRouter();
+  const [artists, setArtists] = useState([]);
+  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    loadContent();
   }, []);
 
-  async function fetchData() {
-    try {
-      const { data: artists, error: artistsError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('account_status', 'active')
-        .limit(6);
+  async function loadContent() {
+    const { data: artistsData } = await supabase
+      .from('users')
+      .select('*')
+      .limit(6)
+      .order('created_at', { ascending: false });
 
-      if (artistsError) throw artistsError;
-      setFeaturedArtists(artists || []);
+    const { data: newsData } = await supabase
+      .from('news_posts')
+      .select('*, users(name, username, profile_image_url)')
+      .eq('status', 'published')
+      .eq('is_featured_on_homepage', true)
+      .limit(6)
+      .order('published_at', { ascending: false });
 
-      const { data: news, error: newsError } = await supabase
-        .from('news_posts')
-        .select('*, users (name, username, profile_image_url)')
-        .eq('status', 'published')
-        .order('published_at', { ascending: false })
-        .limit(9);
+    setArtists(artistsData || []);
+    setNews(newsData || []);
+    setLoading(false);
+  }
 
-      if (newsError) throw newsError;
-      setLatestNews(news || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
+  if (loading) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Montserrat, sans-serif' }}>Loading...</div>;
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: "'Montserrat', sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet" />
-      
-      <style jsx>{`
-        .mc-card {
-          background: #fff;
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-          transition: box-shadow 0.35s ease, transform 0.35s ease;
-          will-change: transform;
-        }
-        .mc-card:hover {
-          box-shadow: 0 12px 28px rgba(0,0,0,0.16);
-          transform: translateY(-2px);
-        }
-        .mc-card__media {
-          position: relative;
-          height: 260px;
-          overflow: hidden;
-          background: #f4f4f5;
-        }
-        @media (max-width: 1024px) {
-          .mc-card__media { height: 200px; }
-        }
-        @media (max-width: 640px) {
-          .mc-card__media { height: 160px; }
-        }
-        .mc-card__media img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          transform: scale(1);
-          transition: transform 0.6s ease;
-          will-change: transform;
-        }
-        .mc-card:hover .mc-card__media img {
-          transform: scale(1.06);
-        }
-        .mc-gradient {
-          position: absolute;
-          inset: auto 0 0 0;
-          height: 40%;
-          background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 100%);
-          pointer-events: none;
-        }
-        .mc-badge {
-          position: absolute;
-          top: 12px;
-          left: 12px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          letter-spacing: 0.02em;
-          color: #fff;
-          background: #111;
-          padding: 6px 10px;
-          border-radius: 999px;
-        }
-        .mc-badge-news {
-          background: #0a66ff;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .mc-card, .mc-card__media img { transition: none; }
-          .mc-card:hover { transform: none; }
-        }
-      `}</style>
-
-      <section style={{ background: 'white', padding: '60px 20px', textAlign: 'center', borderBottom: '1px solid #e0e0e0' }}>
-        <h1 style={{ fontSize: '48px', fontWeight: '700', marginBottom: '15px', color: '#000', letterSpacing: '-1px' }}>
-          Munchies Art Club
-        </h1>
-        <p style={{ fontSize: '18px', color: '#666', marginBottom: '35px', fontWeight: '400' }}>
-          Discover emerging artists and their latest works
-        </p>
-        <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link href="/artists" style={{ padding: '14px 32px', background: '#000', color: '#fff', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '15px' }}>
-            Browse Artists
-          </Link>
-          <Link href="/signup" style={{ padding: '14px 32px', background: 'transparent', color: '#000', border: '2px solid #000', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '15px' }}>
-            Join as Artist
-          </Link>
+    <div style={{ minHeight: '100vh', backgroundColor: '#fafafa' }}>
+      <section style={{ padding: '80px 20px', textAlign: 'center', backgroundColor: '#ffffff' }}>
+        <h1 style={{ fontSize: '64px', fontWeight: '800', marginBottom: '24px', fontFamily: 'Montserrat, sans-serif', letterSpacing: '-1px' }}>Discover Contemporary Art</h1>
+        <p style={{ fontSize: '20px', color: '#666666', marginBottom: '40px', fontFamily: 'Montserrat, sans-serif', maxWidth: '600px', margin: '0 auto 40px' }}>Selected artists and curators shaping the art world today</p>
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/artists" style={{ padding: '16px 32px', backgroundColor: '#000000', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', fontFamily: 'Montserrat, sans-serif' }}>Browse Artists</Link>
+          <Link href="/signup" style={{ padding: '16px 32px', backgroundColor: 'transparent', color: '#000000', textDecoration: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', fontFamily: 'Montserrat, sans-serif', border: '2px solid #000000' }}>Join as Artist</Link>
         </div>
       </section>
 
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '60px 20px' }}>
-        
-        <section style={{ marginBottom: '80px' }}>
-          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '40px', color: '#000' }}>
-            New Artists to Discover
-          </h2>
+      {artists.length > 0 && (
+        <section style={{ padding: '60px 20px', maxWidth: '1200px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '32px', fontFamily: 'Montserrat, sans-serif' }}>New Artists to Discover</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px' }}>
-            {featuredArtists.map(artist => (
-              <article key={artist.id} className="mc-card" data-label="artist">
-                <Link href={'/' + artist.username} style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}>
-                  <div className="mc-card__media">
-                    {artist.header_banner_url && (
-                      <img src={artist.header_banner_url} alt={artist.name} loading="lazy" />
-                    )}
-                    <span className="mc-badge">Artist</span>
-                    <span className="mc-gradient"></span>
-                  </div>
-                  <h3 style={{ fontSize: '1.125rem', lineHeight: '1.3', fontWeight: '700', margin: '12px 16px 4px', color: '#111', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {artist.name}
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            {artists.map(artist => (
+              <Link key={artist.id} href={`/${artist.username}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.06)', transition: 'all 0.3s ease', cursor: 'pointer' }}>
+                  {artist.header_banner_url && (
+                    <div style={{ width: '100%', height: '200px', backgroundImage: `url(${artist.header_banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative' }}>
                       {artist.profile_image_url && (
-                        <img src={artist.profile_image_url} alt={artist.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                        <img src={artist.profile_image_url} alt={artist.name} style={{ width: '80px', height: '80px', borderRadius: '50%', border: '4px solid #ffffff', objectFit: 'cover', position: 'absolute', bottom: '-40px', left: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} />
                       )}
-                      <span style={{ fontSize: '0.9rem', fontWeight: '500', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        @{artist.username}
-                      </span>
                     </div>
-                    <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: '500' }}>View</span>
+                  )}
+                  <div style={{ padding: '50px 20px 20px' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px', fontFamily: 'Montserrat, sans-serif' }}>{artist.name}</h3>
+                    {artist.location && <p style={{ fontSize: '14px', color: '#666666', marginBottom: '12px', fontFamily: 'Montserrat, sans-serif' }}>{artist.location}</p>}
+                    {artist.bio_short && <p style={{ fontSize: '14px', color: '#333333', lineHeight: '1.6', fontFamily: 'Montserrat, sans-serif' }}>{artist.bio_short.substring(0, 100)}...</p>}
                   </div>
-                </Link>
-              </article>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
+      )}
 
-        <section>
-          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '40px', color: '#000' }}>
-            Latest News
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-            {latestNews.map(post => (
-              <article key={post.id} className="mc-card" data-label="news">
-                <Link href={'/news/' + post.id} style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}>
-                  <div className="mc-card__media">
-                    {post.featured_image_url && (
-                      <img src={post.featured_image_url} alt={post.title} loading="lazy" />
-                    )}
-                    <span className="mc-badge mc-badge-news">News</span>
-                    <span className="mc-gradient"></span>
-                  </div>
-                  <h3 style={{ fontSize: '1.125rem', lineHeight: '1.3', fontWeight: '700', margin: '12px 16px 4px', color: '#111', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {post.title}
-                  </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                      {post.users?.profile_image_url && (
-                        <img src={post.users.profile_image_url} alt={post.users.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                      )}
-                      <span style={{ fontSize: '0.9rem', fontWeight: '500', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {post.users?.name}
-                      </span>
+      {news.length > 0 && (
+        <section style={{ padding: '60px 20px', maxWidth: '1200px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '32px', fontFamily: 'Montserrat, sans-serif' }}>Latest News</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
+            {news.map(post => (
+              <Link key={post.id} href={`/news/${post.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,0.06)', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s ease', cursor: 'pointer' }}>
+                  {post.featured_image_url && (
+                    <div style={{ width: '100%', height: '240px', overflow: 'hidden', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: '16px', left: '16px', padding: '6px 12px', backgroundColor: '#0a66ff', color: '#ffffff', fontSize: '11px', fontWeight: '700', borderRadius: '6px', fontFamily: 'Montserrat, sans-serif', textTransform: 'uppercase', letterSpacing: '0.5px' }}>News</div>
+                      <img src={post.featured_image_url} alt={post.image_alt || post.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)', padding: '60px 20px 20px' }}>
+                        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff', fontFamily: 'Montserrat, sans-serif', marginBottom: '12px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{post.title}</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {post.users?.profile_image_url && <img src={post.users.profile_image_url} alt={post.users.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />}
+                          <div>
+                            <p style={{ fontSize: '13px', fontWeight: '600', color: '#ffffff', fontFamily: 'Montserrat, sans-serif', marginBottom: '2px' }}>{post.users?.name}</p>
+                            <p style={{ fontSize: '12px', color: '#cccccc', fontFamily: 'Montserrat, sans-serif' }}>{new Date(post.published_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: '500' }}>Read more</span>
+                  )}
+                  <div style={{ padding: '20px', flex: 1 }}>
+                    <p style={{ fontSize: '14px', color: '#666666', lineHeight: '1.6', fontFamily: 'Montserrat, sans-serif' }}>{post.content.substring(0, 120)}...</p>
+                    <p style={{ marginTop: '16px', fontSize: '14px', fontWeight: '600', color: '#000000', fontFamily: 'Montserrat, sans-serif', textAlign: 'right' }}>Read more →</p>
                   </div>
-                </Link>
-              </article>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
-      </div>
+      )}
+
+      <Footer />
     </div>
   );
 }

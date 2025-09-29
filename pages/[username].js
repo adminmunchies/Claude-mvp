@@ -1,678 +1,307 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
+import { supabase } from '../lib/supabase';
+import Footer from '../components/Footer';
 
 export default function ArtistProfile() {
   const router = useRouter();
   const { username } = router.query;
+  
   const [artist, setArtist] = useState(null);
   const [artworks, setArtworks] = useState([]);
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentArtworkIndex, setCurrentArtworkIndex] = useState(0);
-  
-  // Lightbox State
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
-    if (username && username !== '') {
-      loadArtistData();
+    if (username) {
+      loadArtistProfile();
+      checkIfOwner();
     }
   }, [username]);
 
-  async function loadArtistData() {
-    try {
-      const { data: artistData, error: artistError } = await supabase
+  async function checkIfOwner() {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session) {
+      const { data: profile } = await supabase
         .from('users')
-        .select('*')
-        .eq('username', username)
+        .select('username')
+        .eq('id', session.user.id)
         .single();
-
-      if (artistError) {
-        setLoading(false);
-        return;
-      }
       
-      setArtist(artistData);
-
-      const { data: artworksData } = await supabase
-        .from('artworks')
-        .select('*')
-        .eq('user_id', artistData.id)
-        .order('sort_order', { ascending: true });
-
-      setArtworks(artworksData || []);
-
-      const { data: newsData } = await supabase
-        .from('news_posts')
-        .select('*')
-        .eq('user_id', artistData.id)
-        .eq('status', 'published')
-        .order('published_at', { ascending: false })
-        .limit(3);
-
-      setNews(newsData || []);
-
-    } catch (error) {
-      console.error('Error loading artist:', error);
-    } finally {
-      setLoading(false);
+      if (profile?.username === username) {
+        setIsOwner(true);
+      }
     }
   }
 
-  // Header Navigation (bleibt unverändert)
-  function nextArtwork() {
-    setCurrentArtworkIndex((prev) => 
-      prev === artworks.length - 1 ? 0 : prev + 1
-    );
+  async function loadArtistProfile() {
+    const { data: artistData } = await supabase
+      .from('users')
+      .select('*')
+      .eq('username', username)
+      .single();
+
+    if (!artistData) {
+      router.push('/404');
+      return;
+    }
+
+    setArtist(artistData);
+
+    const { data: artworksData } = await supabase
+      .from('artworks')
+      .select('*')
+      .eq('user_id', artistData.id)
+      .order('sort_order', { ascending: true });
+
+    setArtworks(artworksData || []);
+
+    const { data: newsData } = await supabase
+      .from('news_posts')
+      .select('*')
+      .eq('user_id', artistData.id)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false });
+
+    setNews(newsData || []);
+    setLoading(false);
   }
 
-  function prevArtwork() {
-    setCurrentArtworkIndex((prev) => 
-      prev === 0 ? artworks.length - 1 : prev - 1
-    );
-  }
-
-  // Lightbox Funktionen
-  function openLightbox(index) {
+  function openLightbox(artwork, index) {
+    setLightboxImage(artwork);
     setLightboxIndex(index);
-    setLightboxOpen(true);
   }
 
   function closeLightbox() {
-    setLightboxOpen(false);
+    setLightboxImage(null);
   }
 
-  function nextLightboxImage() {
-    setLightboxIndex((prev) => 
-      prev === artworks.length - 1 ? 0 : prev + 1
-    );
+  function nextImage() {
+    const newIndex = (lightboxIndex + 1) % artworks.length;
+    setLightboxIndex(newIndex);
+    setLightboxImage(artworks[newIndex]);
   }
 
-  function prevLightboxImage() {
-    setLightboxIndex((prev) => 
-      prev === 0 ? artworks.length - 1 : prev - 1
-    );
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === 'Escape') closeLightbox();
-    if (e.key === 'ArrowRight') nextLightboxImage();
-    if (e.key === 'ArrowLeft') prevLightboxImage();
+  function prevImage() {
+    const newIndex = lightboxIndex === 0 ? artworks.length - 1 : lightboxIndex - 1;
+    setLightboxIndex(newIndex);
+    setLightboxImage(artworks[newIndex]);
   }
 
   useEffect(() => {
-    if (lightboxOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
+    function handleKeyPress(e) {
+      if (!lightboxImage) return;
+      
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowRight') nextImage();
+      if (e.key === 'ArrowLeft') prevImage();
     }
 
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
-    };
-  }, [lightboxOpen]);
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [lightboxImage, lightboxIndex]);
 
-  if (!router.isReady || loading) {
-    return <div style={{ minHeight: '100vh', background: '#fafafa' }}></div>;
-  }
-  
-  if (!artist) {
+  if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', background: '#fafafa', minHeight: '100vh' }}>
-        <h1 style={{ fontSize: '24px', color: '#2d3748', fontWeight: '400' }}>Artist not found</h1>
-        <Link href="/artists" style={{ color: '#718096', textDecoration: 'none' }}>← Back to Artists</Link>
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Montserrat, sans-serif'
+      }}>
+        Loading...
       </div>
     );
   }
 
-  const currentArtwork = artworks[currentArtworkIndex];
+  if (!artist) return null;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fafafa' }}>
-      
-      {/* Full-Screen Header - BLEIBT UNVERÄNDERT */}
-      <div style={{ 
-        height: '100vh', 
-        background: currentArtwork ? `url(${currentArtwork.image_url})` : (artist.header_banner_url ? `url(${artist.header_banner_url})` : '#e2e8f0'),
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        
+    <div style={{ minHeight: '100vh', backgroundColor: '#fafafa' }}>
+      {isOwner && (
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.3)'
-        }} />
-        
-        <div style={{
-          position: 'absolute',
-          bottom: '60px',
-          left: '40px',
-          right: '40px',
-          zIndex: 10,
-          maxWidth: '600px'
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 100
         }}>
+          <button
+            onClick={() => router.push('/dashboard')}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#000000',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              fontFamily: 'Montserrat, sans-serif',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      )}
+
+      {artist.header_banner_url && (
+        <div style={{
+          width: '100%',
+          height: '300px',
+          backgroundImage: `url(${artist.header_banner_url})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        }} />
+      )}
+
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '0 20px'
+      }}>
+        <div style={{
+          marginTop: artist.header_banner_url ? '-60px' : '60px',
+          marginBottom: '24px'
+        }}>
+          {artist.profile_image_url && (
+            <img
+              src={artist.profile_image_url}
+              alt={artist.name}
+              style={{
+                width: '120px',
+                height: '120px',
+                borderRadius: '50%',
+                border: '4px solid #ffffff',
+                objectFit: 'cover',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+              }}
+            />
+          )}
+        </div>
+
+        <div style={{ marginBottom: '60px' }}>
           <h1 style={{
-            color: 'white',
             fontSize: '48px',
-            fontWeight: '300',
-            margin: '0',
-            letterSpacing: '-0.02em',
-            textShadow: '0 2px 10px rgba(0,0,0,0.3)'
+            fontWeight: '800',
+            marginBottom: '12px',
+            fontFamily: 'Montserrat, sans-serif'
           }}>
             {artist.name}
           </h1>
-          <p style={{
-            color: 'rgba(255,255,255,0.9)',
-            fontSize: '18px',
-            margin: '8px 0 0 0',
-            fontWeight: '400'
-          }}>
-            @{artist.username}
-          </p>
           
-          {artist.bio_short && (
+          {artist.location && (
             <p style={{
-              color: 'rgba(255,255,255,0.85)',
               fontSize: '16px',
-              margin: '16px 0 0 0',
-              fontWeight: '300',
-              lineHeight: '1.4',
-              textShadow: '0 2px 10px rgba(0,0,0,0.3)'
+              color: '#666666',
+              marginBottom: '24px',
+              fontFamily: 'Montserrat, sans-serif'
             }}>
-              {artist.bio_short}
+              {artist.location}
             </p>
           )}
-        </div>
 
-        {/* Header Navigation - BLEIBT UNVERÄNDERT */}
-        {artworks.length > 1 && (
-          <>
-            <button
-              onClick={prevArtwork}
-              style={{
-                position: 'absolute',
-                left: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(255,255,255,0.2)',
-                border: 'none',
-                color: 'white',
-                fontSize: '24px',
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                backdropFilter: 'blur(10px)',
-                zIndex: 10
-              }}
-            >
-              ‹
-            </button>
-            
-            <button
-              onClick={nextArtwork}
-              style={{
-                position: 'absolute',
-                right: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(255,255,255,0.2)',
-                border: 'none',
-                color: 'white',
-                fontSize: '24px',
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                backdropFilter: 'blur(10px)',
-                zIndex: 10
-              }}
-            >
-              ›
-            </button>
-          </>
-        )}
-
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          color: 'white',
-          fontSize: '12px',
-          opacity: '0.7'
-        }}>
-          ↓ Scroll for more
-        </div>
-      </div>
-
-      {/* Content Section */}
-      <div style={{ 
-        background: 'white',
-        padding: '60px 40px',
-        maxWidth: '800px',
-        margin: '0 auto'
-      }}>
-        
-        {/* Profile Details */}
-        <div style={{ 
-          display: 'flex',
-          alignItems: 'flex-start',
-          marginBottom: '60px',
-          gap: '24px'
-        }}>
-          {artist.profile_image_url && (
-            <img 
-              src={artist.profile_image_url} 
-              alt={artist.name}
-              style={{ 
-                width: '80px', 
-                height: '80px', 
-                borderRadius: '50%',
-                objectFit: 'cover'
-              }}
-            />
+          {artist.bio_long && (
+            <p style={{
+              fontSize: '18px',
+              lineHeight: '1.8',
+              color: '#333333',
+              marginBottom: '24px',
+              fontFamily: 'Montserrat, sans-serif',
+              maxWidth: '800px'
+            }}>
+              {artist.bio_long}
+            </p>
           )}
-          <div style={{ flex: 1 }}>
-            {artist.location && (
-              <p style={{ 
-                color: '#718096', 
-                fontSize: '16px', 
-                margin: '0 0 12px 0',
-                display: 'flex',
-                alignItems: 'center'
-              }}>
-                📍 {artist.location}
-              </p>
+
+          <div style={{ display: 'flex', gap: '16px', marginTop: '24px', flexWrap: 'wrap' }}>
+            {artist.website_url && (
+              <a href={artist.website_url} target="_blank" rel="noopener noreferrer" style={{ padding: '10px 20px', backgroundColor: '#000000', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', fontFamily: 'Montserrat, sans-serif' }}>Website</a>
             )}
             
-            {artist.bio_long && artist.bio_long.trim() !== '' && (
-              <p style={{ 
-                color: '#4a5568', 
-                fontSize: '16px', 
-                lineHeight: '1.6',
-                margin: '0 0 24px 0'
-              }}>
-                {artist.bio_long}
-              </p>
+            {artist.instagram_handle && (
+              <a href={`https://instagram.com/${artist.instagram_handle}`} target="_blank" rel="noopener noreferrer" style={{ padding: '10px 20px', backgroundColor: '#000000', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', fontFamily: 'Montserrat, sans-serif' }}>Instagram</a>
             )}
 
-            <div style={{ display: 'flex', gap: '16px' }}>
-              {artist.website_url && (
-                <a 
-                  href={artist.website_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ 
-                    color: '#4a5568',
-                    textDecoration: 'none',
-                    fontSize: '14px',
-                    padding: '8px 16px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '20px',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  Website
-                </a>
-              )}
-              {artist.instagram_handle && (
-                <a 
-                  href={artist.instagram_handle.startsWith('http') ? artist.instagram_handle : `https://instagram.com/${artist.instagram_handle}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ 
-                    color: '#4a5568',
-                    textDecoration: 'none',
-                    fontSize: '14px',
-                    padding: '8px 16px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '20px',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  Instagram
-                </a>
-              )}
-            </div>
+            {artist.contact_email && (
+              <a href={`mailto:${artist.contact_email}`} style={{ padding: '10px 20px', backgroundColor: '#000000', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', fontFamily: 'Montserrat, sans-serif' }}>Contact</a>
+            )}
           </div>
         </div>
 
-        {/* Current Artwork Details */}
-        {currentArtwork && (
-          <div style={{ marginBottom: '60px' }}>
+        {artworks.length > 0 && (
+          <section style={{ marginBottom: '80px' }}>
             <h2 style={{
               fontSize: '32px',
-              fontWeight: '300',
-              color: '#2d3748',
-              margin: '0 0 12px 0',
-              letterSpacing: '-0.02em'
+              fontWeight: '700',
+              marginBottom: '32px',
+              fontFamily: 'Montserrat, sans-serif'
             }}>
-              {currentArtwork.title}
+              Artworks
             </h2>
             
-            <div style={{ 
-              display: 'flex', 
-              gap: '20px', 
-              marginBottom: '16px',
-              color: '#718096',
-              fontSize: '14px'
-            }}>
-              {currentArtwork.year_created && <span>{currentArtwork.year_created}</span>}
-              {currentArtwork.medium && <span>{currentArtwork.medium}</span>}
-              {currentArtwork.dimensions && <span>{currentArtwork.dimensions}</span>}
-            </div>
-            
-            {currentArtwork.description && (
-              <p style={{
-                color: '#4a5568',
-                fontSize: '16px',
-                lineHeight: '1.6',
-                margin: '0'
-              }}>
-                {currentArtwork.description}
-              </p>
-            )}
-
-            {artworks.length > 1 && (
-              <p style={{
-                color: '#718096',
-                fontSize: '12px',
-                margin: '20px 0 0 0'
-              }}>
-                {currentArtworkIndex + 1} of {artworks.length} artworks
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Thumbnail Gallery - MIT LIGHTBOX FUNKTION */}
-        {artworks.length > 1 && (
-          <div style={{ marginBottom: '60px' }}>
-            <h3 style={{
-              fontSize: '20px',
-              fontWeight: '400',
-              color: '#2d3748',
-              marginBottom: '20px'
-            }}>
-              More Works
-            </h3>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-              gap: '12px'
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: '24px'
             }}>
               {artworks.map((artwork, index) => (
-                <div
-                  key={artwork.id}
-                  onClick={() => openLightbox(index)}  // LIGHTBOX ÖFFNEN
-                  style={{
-                    cursor: 'pointer',
-                    opacity: index === currentArtworkIndex ? 0.7 : 1,
-                    transition: 'all 0.2s ease',
-                    borderRadius: '8px',
-                    overflow: 'hidden'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <img
-                    src={artwork.image_url}
-                    alt={artwork.title}
-                    style={{
-                      width: '100%',
-                      height: '120px',
-                      objectFit: 'cover',
-                      borderRadius: '8px'
-                    }}
-                  />
+                <div key={artwork.id} onClick={() => openLightbox(artwork, index)} style={{ cursor: 'pointer', backgroundColor: '#ffffff', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                  <div style={{ width: '100%', height: '300px', overflow: 'hidden' }}>
+                    <img src={artwork.image_url} alt={artwork.alt_text || artwork.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  
+                  <div style={{ padding: '16px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px', fontFamily: 'Montserrat, sans-serif' }}>{artwork.title}</h3>
+                    {artwork.year_created && (
+                      <p style={{ fontSize: '14px', color: '#666666', fontFamily: 'Montserrat, sans-serif' }}>{artwork.year_created}</p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* News Section */}
         {news.length > 0 && (
-          <div>
-            <h3 style={{
-              fontSize: '20px',
-              fontWeight: '400',
-              color: '#2d3748',
-              marginBottom: '20px'
-            }}>
-              Latest Updates
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <section style={{ marginBottom: '80px' }}>
+            <h2 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '32px', fontFamily: 'Montserrat, sans-serif' }}>News</h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {news.map(post => (
-                <Link 
-                  key={post.id} 
-                  href={`/news/${post.id}`}
-                  style={{ textDecoration: 'none' }}
-                >
-                  <div style={{
-                    padding: '20px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s ease',
-                    display: 'flex',
-                    gap: '16px'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                  >
-                    
-                    {post.featured_image_url && (
-                      <img 
-                        src={post.featured_image_url} 
-                        alt={post.title}
-                        style={{ 
-                          width: '80px', 
-                          height: '80px', 
-                          objectFit: 'cover',
-                          borderRadius: '8px',
-                          flexShrink: 0
-                        }}
-                      />
-                    )}
-                    
-                    <div style={{ flex: 1 }}>
-                      <h4 style={{
-                        fontSize: '16px',
-                        fontWeight: '500',
-                        color: '#2d3748',
-                        margin: '0 0 8px 0'
-                      }}>
-                        {post.title}
-                      </h4>
-                      
-                      <p style={{
-                        fontSize: '14px',
-                        color: '#4a5568',
-                        margin: '0 0 8px 0',
-                        lineHeight: '1.4'
-                      }}>
-                        {post.content.substring(0, 120)}...
-                      </p>
-                      
-                      <p style={{
-                        fontSize: '12px',
-                        color: '#718096',
-                        margin: '0'
-                      }}>
-                        {new Date(post.published_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
+                <div key={post.id} onClick={() => router.push(`/news/${post.id}`)} style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', cursor: 'pointer' }}>
+                  <h3 style={{ fontSize: '22px', fontWeight: '700', marginBottom: '8px', fontFamily: 'Montserrat, sans-serif' }}>{post.title}</h3>
+                  <p style={{ fontSize: '14px', color: '#999999', marginBottom: '12px', fontFamily: 'Montserrat, sans-serif' }}>{new Date(post.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                  <p style={{ fontSize: '16px', color: '#666666', lineHeight: '1.6', fontFamily: 'Montserrat, sans-serif' }}>{post.content.substring(0, 150)}...</p>
+                </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
 
-      {/* LIGHTBOX MODAL */}
-      {lightboxOpen && artworks.length > 0 && (
-        <div 
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          onClick={closeLightbox}
-        >
-          {/* Close Button */}
-          <button
-            onClick={closeLightbox}
-            style={{
-              position: 'absolute',
-              top: '20px',
-              right: '20px',
-              background: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              color: 'white',
-              fontSize: '24px',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              zIndex: 1001
-            }}
-          >
-            ×
-          </button>
+      <Footer />
 
-          {/* Previous Button */}
-          {artworks.length > 1 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); prevLightboxImage(); }}
-              style={{
-                position: 'absolute',
-                left: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: 'none',
-                color: 'white',
-                fontSize: '24px',
-                width: '50px',
-                height: '50px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                zIndex: 1001
-              }}
-            >
-              ‹
-            </button>
-          )}
-
-          {/* Next Button */}
-          {artworks.length > 1 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); nextLightboxImage(); }}
-              style={{
-                position: 'absolute',
-                right: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: 'none',
-                color: 'white',
-                fontSize: '24px',
-                width: '50px',
-                height: '50px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                zIndex: 1001
-              }}
-            >
-              ›
-            </button>
-          )}
-
-          {/* Main Image */}
-          <div 
-            style={{ 
-              maxWidth: '90vw', 
-              maxHeight: '90vh', 
-              display: 'flex', 
-              flexDirection: 'column',
-              alignItems: 'center'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={artworks[lightboxIndex]?.image_url}
-              alt={artworks[lightboxIndex]?.title}
-              style={{
-                maxWidth: '100%',
-                maxHeight: '80vh',
-                objectFit: 'contain',
-                borderRadius: '10px'
-              }}
-            />
-            
-            {/* Image Info */}
-            <div style={{
-              marginTop: '20px',
-              textAlign: 'center',
-              color: 'white',
-              background: 'rgba(0, 0, 0, 0.7)',
-              padding: '15px',
-              borderRadius: '10px',
-              maxWidth: '500px'
-            }}>
-              <h3 style={{ margin: '0 0 5px 0' }}>
-                {artworks[lightboxIndex]?.title}
-              </h3>
-              {artworks[lightboxIndex]?.year_created && (
-                <p style={{ margin: '0 0 5px 0', color: '#ccc' }}>
-                  {artworks[lightboxIndex].year_created}
-                </p>
-              )}
-              {artworks[lightboxIndex]?.medium && (
-                <p style={{ margin: '0 0 5px 0', color: '#ccc' }}>
-                  {artworks[lightboxIndex].medium}
-                </p>
-              )}
-              {artworks[lightboxIndex]?.description && (
-                <p style={{ margin: '10px 0 0 0', color: '#eee', fontSize: '14px' }}>
-                  {artworks[lightboxIndex].description}
-                </p>
-              )}
-              {artworks.length > 1 && (
-                <p style={{ margin: '10px 0 0 0', color: '#999', fontSize: '12px' }}>
-                  {lightboxIndex + 1} of {artworks.length} • Use arrow keys or buttons to navigate
-                </p>
-              )}
+      {lightboxImage && (
+        <div onClick={closeLightbox} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
+          <button onClick={closeLightbox} style={{ position: 'absolute', top: '20px', right: '20px', backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '40px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', fontWeight: '300' }}>×</button>
+          <button onClick={(e) => { e.stopPropagation(); prevImage(); }} style={{ position: 'absolute', left: '20px', backgroundColor: 'rgba(255,255,255,0.1)', border: '2px solid #ffffff', color: '#ffffff', fontSize: '24px', padding: '12px 20px', cursor: 'pointer', borderRadius: '8px', fontFamily: 'Montserrat, sans-serif', fontWeight: '600' }}>←</button>
+          <button onClick={(e) => { e.stopPropagation(); nextImage(); }} style={{ position: 'absolute', right: '20px', backgroundColor: 'rgba(255,255,255,0.1)', border: '2px solid #ffffff', color: '#ffffff', fontSize: '24px', padding: '12px 20px', cursor: 'pointer', borderRadius: '8px', fontFamily: 'Montserrat, sans-serif', fontWeight: '600' }}>→</button>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <img src={lightboxImage.image_url} alt={lightboxImage.alt_text || lightboxImage.title} style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', marginBottom: '20px' }} />
+            <div style={{ backgroundColor: 'rgba(0,0,0,0.8)', padding: '20px', borderRadius: '8px', maxWidth: '600px', textAlign: 'center' }}>
+              <p style={{ color: '#ffffff', fontSize: '14px', marginBottom: '8px', fontFamily: 'Montserrat, sans-serif', fontWeight: '600' }}>{lightboxIndex + 1} of {artworks.length}</p>
+              <h3 style={{ color: '#ffffff', fontSize: '24px', fontWeight: '700', marginBottom: '8px', fontFamily: 'Montserrat, sans-serif' }}>{lightboxImage.title}</h3>
+              {lightboxImage.year_created && <p style={{ color: '#cccccc', fontSize: '16px', marginBottom: '8px', fontFamily: 'Montserrat, sans-serif' }}>{lightboxImage.year_created}</p>}
+              {lightboxImage.medium && <p style={{ color: '#cccccc', fontSize: '14px', marginBottom: '4px', fontFamily: 'Montserrat, sans-serif' }}>{lightboxImage.medium}</p>}
+              {lightboxImage.dimensions && <p style={{ color: '#cccccc', fontSize: '14px', fontFamily: 'Montserrat, sans-serif' }}>{lightboxImage.dimensions}</p>}
+              {lightboxImage.description && <p style={{ color: '#cccccc', fontSize: '14px', marginTop: '12px', fontFamily: 'Montserrat, sans-serif', lineHeight: '1.6' }}>{lightboxImage.description}</p>}
             </div>
           </div>
         </div>
